@@ -1,6 +1,6 @@
 {
   "name": "typed-cbor",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Subset of CBOR encoder/decoder with schema validation and type inference, designed for browser environments.",
   "license": "MIT",
   "author": {
@@ -8,7 +8,7 @@
     "email": "faisalhakim47@gmail.com"
   },
   "type": "module",
-  "main": "index.js",
+  "main": "./lib/cbor.js",
   "types": "./types/cbor.d.ts",
   "scripts": {
     "build": "tsc",
