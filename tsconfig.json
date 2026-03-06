@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationDir": "types",
+    "lib": ["ESNext"]
+  },
+  "files": [
+    "lib/cbor.js"
+  ]
+}
