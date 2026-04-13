@@ -1,4 +1,4 @@
-import { array, boolean, bytes, createEncoder, decode, float, integer, map, nil, oneOf, text } from '../lib/cbor.js';
+import { array, boolean, bytes, createEncoder, decode, float, integer, map, nil, oneOf, text, typeCheck } from '../lib/cbor.js';
 
 const sqlParamShape = oneOf(
   nil(),
@@ -26,3 +26,11 @@ const sqlQueryCbor = encoder.encode(sqlQueryShape, {
 const sqlQuery = decode(sqlQueryShape, sqlQueryCbor);
 
 console.log(sqlQuery.sql); // 'SELECT * FROM users WHERE id = ?'
+
+/** @type {unknown} */
+let unknownSqlQuery = undefined;
+
+if (typeCheck(sqlQueryShape, unknownSqlQuery)) {
+  // this should be typed as { sql: string, params: unknown[] }
+  unknownSqlQuery;
+}

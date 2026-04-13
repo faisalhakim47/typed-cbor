@@ -100,6 +100,13 @@ export function map<Properties extends Record<string, Shape>>(properties: Proper
  * @returns {OneOfShape<Variants>}
  */
 export function oneOf<Variants extends Shape[]>(...variants: Variants): OneOfShape<Variants>;
+/**
+ * @template {Shape} S
+ * @param {S} shape
+ * @param {unknown} value
+ * @returns {value is InferValue<S>}
+ */
+export function typeCheck<S extends Shape>(shape: S, value: unknown): value is InferValue<S>;
 export function createEncoder(): {
     encode: <S extends Shape>(shape: S, value: InferValue<S>) => Uint8Array;
 };
