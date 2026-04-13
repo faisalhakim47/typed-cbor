@@ -4,10 +4,10 @@
     "checkJs": true,
     "module": "nodenext",
     "moduleResolution": "nodenext",
+    "target": "es2025",
     "declaration": true,
     "emitDeclarationOnly": true,
-    "declarationDir": "types",
-    "lib": ["ESNext"]
+    "lib": ["ESNext", "DOM"]
   },
   "files": [
     "lib/cbor.js"
