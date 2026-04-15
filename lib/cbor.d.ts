@@ -128,6 +128,11 @@ export function oneOf<Variants extends Shape[]>(...variants: Variants): OneOfSha
  * @returns {value is InferValue<S>}
  */
 export function typeCheck<S extends Shape>(shape: S, value: unknown): value is InferValue<S>;
+/**
+ * @param {TagShape<unknown, unknown>} shape
+ * @param {Uint8Array} cbor
+ */
+export function tagCheck(shape: TagShape<unknown, unknown>, cbor: Uint8Array): boolean;
 export function createEncoder(): {
     encode: <S extends Shape>(shape: S, value: InferValue<S>) => Uint8Array;
 };
