@@ -129,6 +129,10 @@ export function oneOf<Variants extends Shape[]>(...variants: Variants): OneOfSha
  */
 export function typeCheck<S extends Shape>(shape: S, value: unknown): value is InferValue<S>;
 /**
+ * @param {Uint8Array} cbor
+ */
+export function readTag(cbor: Uint8Array): bigint;
+/**
  * @param {TagShape<unknown, unknown>} shape
  * @param {Uint8Array} cbor
  */
