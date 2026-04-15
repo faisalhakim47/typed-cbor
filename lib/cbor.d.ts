@@ -15,10 +15,15 @@
  * @typedef {{ type: SHAPE_MAP, properties: Properties }} MapShape
  */
 /**
+ * @template ValueShape
+ * @template JSValue
+ * @typedef {{ type: SHAPE_TAG, tag: bigint, value: ValueShape, encode: (value: JSValue) => unknown, decode: (value: InferValue<ValueShape>) => JSValue }} TagShape
+ */
+/**
  * @template Vairants
  * @typedef {{ type: SHAPE_ONE_OF, variants: Vairants }} OneOfShape
  */
-/** @typedef {PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | OneOfShape<unknown[]>} Shape */
+/** @typedef {PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | TagShape<unknown, unknown> | OneOfShape<unknown[]>} Shape */
 /**
  * @template S
  * @typedef {S extends unknown ? InferLeafInternal<S> : never} InferLeaf
@@ -34,6 +39,8 @@
  *   S extends UndefShape ? undefined :
  *   S extends FloatShape ? number :
  *   S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] :
+ *   S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]> } :
+ *   S extends TagShape<unknown, infer JSValue> ? JSValue :
  *   S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : unknown
  * )} InferLeafInternal
  */
@@ -49,6 +56,7 @@
  *   S extends FloatShape ? number :
  *   S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] :
  *   S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]> } :
+ *   S extends TagShape<unknown, infer JSValue> ? JSValue :
  *   S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : unknown
  * )} InferShallowInternal
  */
@@ -68,6 +76,7 @@
  *   S extends FloatShape ? number :
  *   S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] :
  *   S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferShallow<Properties[K]> } :
+ *   S extends TagShape<unknown, infer JSValue> ? JSValue :
  *   S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : unknown
  * )} InferValueInternal
  */
@@ -94,6 +103,18 @@ export function array<ItemShape>(items: ItemShape): ArrayShape<ItemShape>;
  * @returns {MapShape<Properties>}
  */
 export function map<Properties extends Record<string, Shape>>(properties: Properties): MapShape<Properties>;
+/**
+ * @template ValueShape
+ * @template JSValue
+ * @param {bigint} tag
+ * @param {ValueShape} value
+ * @param {{ encode: (value: JSValue) => unknown, decode: (value: InferValue<ValueShape>) => JSValue }} options
+ * @returns {TagShape<ValueShape, JSValue>}
+ */
+export function tag<ValueShape, JSValue>(tag: bigint, value: ValueShape, options: {
+    encode: (value: JSValue) => unknown;
+    decode: (value: InferValue<ValueShape>) => JSValue;
+}): TagShape<ValueShape, JSValue>;
 /**
  * @template {Shape[]} Variants
  * @param {Variants} variants
@@ -147,16 +168,23 @@ export type MapShape<Properties extends Record<string, unknown>> = {
     type: typeof SHAPE_MAP;
     properties: Properties;
 };
+export type TagShape<ValueShape, JSValue> = {
+    type: typeof SHAPE_TAG;
+    tag: bigint;
+    value: ValueShape;
+    encode: (value: JSValue) => unknown;
+    decode: (value: InferValue<ValueShape>) => JSValue;
+};
 export type OneOfShape<Vairants> = {
     type: typeof SHAPE_ONE_OF;
     variants: Vairants;
 };
-export type Shape = PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | OneOfShape<unknown[]>;
+export type Shape = PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | TagShape<unknown, unknown> | OneOfShape<unknown[]>;
 export type InferLeaf<S> = S extends unknown ? InferLeafInternal<S> : never;
-export type InferLeafInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : unknown);
-export type InferShallowInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : unknown);
+export type InferLeafInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends TagShape<unknown, infer JSValue> ? JSValue : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : unknown);
+export type InferShallowInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends TagShape<unknown, infer JSValue> ? JSValue : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : unknown);
 export type InferShallow<S> = S extends unknown ? InferShallowInternal<S> : never;
-export type InferValueInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferShallow<Properties[K]>; } : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : unknown);
+export type InferValueInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferShallow<Properties[K]>; } : S extends TagShape<unknown, infer JSValue> ? JSValue : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : unknown);
 export type InferValue<S> = S extends unknown ? InferValueInternal<S> : never;
 declare const SHAPE_INTEGER: unique symbol;
 declare const SHAPE_BYTES: unique symbol;
@@ -167,5 +195,6 @@ declare const SHAPE_UNDEFINED: unique symbol;
 declare const SHAPE_FLOAT: unique symbol;
 declare const SHAPE_ARRAY: unique symbol;
 declare const SHAPE_MAP: unique symbol;
+declare const SHAPE_TAG: unique symbol;
 declare const SHAPE_ONE_OF: unique symbol;
 export {};
