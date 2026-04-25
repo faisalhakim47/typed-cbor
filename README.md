@@ -1,207 +1,173 @@
 # typed-cbor
 
-A lightweight, schema-first CBOR (Concise Binary Object Representation) encoder/decoder for JavaScript. It is dependency-free and targets modern runtimes (browser and Node.js).
+A type-safe CBOR (Concise Binary Object Representation) encoder/decoder for JavaScript with schema validation and automatic TypeScript type inference.
 
-## Overview
+## Features
 
-`typed-cbor` serializes and deserializes CBOR data using explicit schemas. Schemas are used for:
+- **Schema-first design** - Define data shapes and encode/decode with automatic validation
+- **Type inference** - Automatic TypeScript types from schema definitions
+- **Typed API** - Full TypeScript support with JSDoc annotations
+- **RFC 8949 compliant** - Subset of CBOR major types
+- **Browser-first** - Works in browser and Node.js environments
 
-- Runtime validation during encode and decode
-- Type annotations exposed through generated declaration files
-
-The implementation follows core CBOR behavior from [RFC 8949](https://www.rfc-editor.org/info/rfc8949), with a deliberate subset of features.
-
-## Installation
+## Install
 
 ```bash
 npm install typed-cbor
 ```
 
-For local development in this repository, import from `./lib/cbor.js`.
+## Usage
 
-## Quick Start
+Define a schema using shape functions, then encode and decode values:
 
 ```javascript
-import { integer, text, map, createEncoder, decode } from 'typed-cbor';
+import { map, text, array, integer, oneOf, nil, createEncoder, decode, typeCheck } from 'typed-cbor';
 
-const userSchema = map({
-  id: integer(),
-  name: text(),
-  email: text(),
+const QuerySchema = map({
+  sql: text(),
+  params: array(oneOf(integer(), text(), nil())),
 });
 
 const encoder = createEncoder();
 
-const user = { id: 1n, name: 'Alice', email: 'alice@example.com' };
-const encoded = encoder.encode(userSchema, user);
+const cbor = encoder.encode(QuerySchema, {
+  sql: 'SELECT * FROM users WHERE id = ?',
+  params: [1n, 'admin'],
+});
 
-const decoded = decode(userSchema, encoded);
-console.log(decoded);
+const query = decode(QuerySchema, cbor);
+```
+
+### Type Safety at Runtime
+
+Use `typeCheck` for runtime validation:
+
+```javascript
+import { typeCheck } from 'typed-cbor';
+
+/** @type {unknown} */
+let unknownValue = undefined;
+
+if (typeCheck(QuerySchema, unknownValue)) {
+  // unknownValue is typed as { sql: string, params: (bigint | string | null)[] }
+  console.log(unknownValue.sql);
+}
 ```
 
 ## Schema API
 
-### Primitive schemas
+### Primitive Types
 
 ```javascript
-import { integer, text, bytes, boolean, nil, undef, float } from 'typed-cbor';
-
-const id = integer();       // bigint
-const name = text();        // string
-const payload = bytes();    // Uint8Array
-const active = boolean();   // boolean
-const empty = nil();        // null
-const missing = undef();    // undefined
-const score = float();      // number
+integer()     // BigInt values
+float()       // Number (float32/float64)
+text()        // String
+bytes()       // Uint8Array
+boolean()    // Boolean
+nil()         // null
+undef()       // undefined
 ```
 
-### Composite schemas
+### Composite Types
 
 ```javascript
-import { array, map, oneOf, integer, text, boolean } from 'typed-cbor';
-
-const tags = array(text());
-
-const person = map({
-  name: text(),
-  age: integer(),
-  active: boolean(),
-});
-
-// Union of variants (not tagged/discriminated by the library)
-const idOrName = oneOf(integer(), text());
+array(items)        // Array of items with specific shape
+map(props)         // Object with string keys
+oneOf(...variants) // Union type
+constant(value)    // Literal/constant value
+tag(tag, value, options) // CBOR tag with custom encode/decode
 ```
 
-### Tagged values
+### Encoder & Decoder
 
 ```javascript
-import { tag, integer, text, map, bytes, float, createEncoder, decode, tagCheck } from 'typed-cbor';
+const encoder = createEncoder();
+const cbor = encoder.encode(shape, value);
 
-// Tag 0 – RFC 3339 date/time string
-const dateTimeSchema = tag(0n, text(), {
-  encode: (value) => value.toISOString(),
-  decode: (value) => new Date(value),
+const decoded = decode(shape, cbor);
+const isValid = typeCheck(shape, value);
+```
+
+## Examples
+
+### SQL Query Parameters
+
+```javascript
+import { map, text, array, integer, float, oneOf, nil, bytes, boolean, createEncoder, decode } from 'typed-cbor';
+
+const sqlParamShape = oneOf(
+  nil(),
+  boolean(),
+  integer(),
+  float(),
+  text(),
+  bytes(),
+);
+
+const sqlQueryShape = map({
+  sql: text(),
+  params: array(sqlParamShape),
 });
 
-// Tag 1 – Epoch-based date/time (seconds)
-const timestampSchema = tag(1n, integer(), {
-  encode: (value) => BigInt(Math.floor(value.getTime() / 1000)),
-  decode: (value) => new Date(Number(value) * 1000),
+const encoder = createEncoder();
+
+const cbor = encoder.encode(sqlQueryShape, {
+  sql: 'SELECT * FROM users WHERE id = ?',
+  params: [123n],
 });
 
-// Use tagCheck to verify tag before decoding
-const cborData = receiveFromNetwork();
-if (tagCheck(timestampSchema, cborData)) {
-  const decoded = decode(timestampSchema, cborData);
+const query = decode(sqlQueryShape, cbor);
+```
+
+### Tagged Messages (Communication Protocols)
+
+```javascript
+import { tag, map, text, integer, tagCheck, createEncoder, decode } from 'typed-cbor';
+
+const encoder = createEncoder();
+
+const AuthShape = tag(10001n, map({
+  username: text(),
+  password: text(),
+}), {
+  encode: (value) => ({ username: value.username, password: value.password }),
+  decode: (value) => ({ username: value.username, password: value.password }),
+});
+
+const SessionShape = tag(10002n, map({
+  userId: integer(),
+  token: text(),
+}), {
+  encode: (value) => ({ userId: value.userId, token: value.token }),
+  decode: (value) => ({ userId: value.userId, token: value.token }),
+});
+
+function frontendSendAuth() {
+  return encoder.encode(AuthShape, {
+    username: 'admin',
+    password: 'secret',
+  });
+}
+
+function backendHandler(authCbor) {
+  if (tagCheck(AuthShape, authCbor)) {
+    const auth = decode(AuthShape, authCbor);
+    return encoder.encode(SessionShape, {
+      userId: 1n,
+      token: 'token123',
+    });
+  }
+  throw new Error('Unknown message type');
 }
 ```
 
-**Tag 0 – RFC 3339 Date/Time String**
+## Limitations
 
-```javascript
-const encoder = createEncoder();
-const now = new Date('2024-01-15T10:30:00Z');
-const encoded = encoder.encode(dateTimeSchema, now);
-const result = decode(dateTimeSchema, encoded);
-console.log(result.toISOString()); // "2024-01-15T10:30:00.000Z"
-```
-
-**Tag 1 – Epoch-based Date/Time**
-
-```javascript
-const encoder = createEncoder();
-const now = new Date();
-const encoded = encoder.encode(timestampSchema, now);
-const result = decode(timestampSchema, encoded);
-console.log(result.toISOString()); // Current time as Date object
-```
-
-**IANA CBOR Tags Registry**
-
-This library implements the tag mechanism but does not provide built-in handlers for standard tags. You can implement any tag from the [IANA CBOR Tags Registry](https://www.iana.org/assignments/cbor-tags/cbor-tags.xhtml) by providing custom `encode` and `decode` functions. Common tags include:
-
-- `0` – RFC 3339 date/time string
-- `1` – Epoch-based date/time (integer or float)
-- `32` – URI
-- `36` – MIME message
-- `37` – Binary UUID
-
-## TypeScript Notes
-
-`InferValue` can be used to derive a value type from a schema:
-
-```typescript
-import { map, text, integer, InferValue, createEncoder } from 'typed-cbor';
-
-const userSchema = map({
-  name: text(),
-  age: integer(),
-});
-
-type User = InferValue<typeof userSchema>;
-
-const encoder = createEncoder();
-const user: User = { name: 'Bob', age: 30n };
-const encoded = encoder.encode(userSchema, user);
-```
-
-Note: runtime validation is authoritative. Depending on TypeScript configuration and declaration-generation details, inferred editor types may be less strict than runtime checks.
-
-## Encoding and Decoding Behavior
-
-- `createEncoder()` returns a reusable encoder instance.
-- The internal buffer grows when needed and is reused between calls.
-- `decode(shape, cbor)` fully decodes one CBOR item and rejects trailing bytes.
-- Decoding validates the result against the given schema and throws on mismatch.
-
-## Supported CBOR Major Types
-
-| Major Type | Support | Details |
-|-----------|---------|---------|
-| 0 | Yes | Unsigned integers |
-| 1 | Yes | Negative integers |
-| 2 | Yes | Byte strings |
-| 3 | Yes | Text strings (UTF-8) |
-| 4 | Yes | Arrays |
-| 5 | Yes | Maps |
-| 6 | Partial | User-provided encode/decode handlers only |
-| 7 | Yes | booleans, null, undefined, floats |
-
-## Important Limitations
-
-- No indefinite-length (streaming) items.
-- Map keys must decode to strings.
-- Integer encoding is limited to CBOR uint64 payload size; encodable bigint range is `[-18446744073709551616, 18446744073709551615]`.
-- `float()` rejects `NaN`, `Infinity`, and `-Infinity` during encoding.
-- Standard CBOR tags are not implemented – users must provide their own encode/decode handlers.
-
-## Error Handling
-
-Both encode and decode throw `Error` instances for invalid input, including:
-
-- Type mismatches against schema
-- Truncated or malformed CBOR data
-- Duplicate keys in CBOR maps
-- Extra bytes after a decoded value
-
-## Development
-
-### Build
-
-```bash
-npm run build
-```
-
-Generates declaration files into `types/` from JSDoc annotations.
-
-### Test
-
-```bash
-npm test
-```
-
-Runs the Node.js test suite in `lib/cbor.test.js`.
+- Map keys are limited to strings only
+- Does not support NaN, Infinity, or streaming indefinite-length items
+- Tags are partially supported - custom encode/decode handlers must be provided
+- Negative integers are encoded using the CBOR scheme (N = -1 - value)
 
 ## License
 
-MIT © Faisal Hakim
+MIT

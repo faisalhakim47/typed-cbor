@@ -7,9 +7,10 @@
     "target": "es2025",
     "declaration": true,
     "emitDeclarationOnly": true,
+    "types": ["node"],
     "lib": ["ESNext", "DOM"]
   },
-  "files": [
-    "lib/cbor.js"
+  "include": [
+    "./lib/cbor.js"
   ]
 }
