@@ -12,22 +12,39 @@
 /** @typedef {IntegerShape | BytesShape | TextShape | BooleanShape | NilShape | UndefShape | FloatShape} PrimitiveShape */
 /**
  * @template ItemShape
- * @typedef {{ type: SHAPE_ARRAY, items: ItemShape }} ArrayShape
+ * @typedef {object} ArrayShape
+ * @property {typeof SHAPE_ARRAY} type
+ * @property {ItemShape} items
  */
 /**
  * @template {Record<string, unknown>} Properties
- * @typedef {{ type: SHAPE_MAP, properties: Properties }} MapShape
+ * @typedef {object} MapShape
+ * @property {typeof SHAPE_MAP} type
+ * @property {Properties} properties
+ */
+/**
+ * @template ValueShape
+ * @typedef {object} TagShape
+ * @property {typeof SHAPE_TAG} type
+ * @property {bigint} tag
+ * @property {ValueShape} value
+ */
+/**
+ * @template Variants
+ * @typedef {object} OneOfShape
+ * @property {typeof SHAPE_ONEOF} type
+ * @property {Variants} variants
  */
 /**
  * @template ValueShape
  * @template JSValue
- * @typedef {{ type: SHAPE_TAG, tag: bigint, value: ValueShape, encode: (value: JSValue) => unknown, decode: (value: InferValue<ValueShape>) => JSValue }} TagShape
+ * @typedef {object} TransformShape
+ * @property {typeof SHAPE_TRANSFORM} type
+ * @property {ValueShape} value
+ * @property {(value: JSValue) => InferValue<ValueShape>} encode
+ * @property {(value: InferValue<ValueShape>) => JSValue} decode
  */
-/**
- * @template Vairants
- * @typedef {{ type: SHAPE_ONEOF, variants: Vairants }} OneOfShape
- */
-/** @typedef {PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | OneOfShape<unknown[]> | ConstShape<unknown> | TagShape<any, any>} Shape */
+/** @typedef {PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | OneOfShape<unknown[]> | ConstShape<unknown> | TagShape<unknown> | TransformShape<any, any>} Shape */
 /**
  * @template S
  * @typedef {S extends unknown ? InferLeafInternal<S> : never} InferLeaf
@@ -44,8 +61,9 @@
  *   S extends FloatShape ? number :
  *   S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] :
  *   S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]> } :
- *   S extends TagShape<infer ValueShape, infer JSValue> ? InferLeaf<ValueShape> :
+ *   S extends TagShape<infer ValueShape> ? InferLeaf<ValueShape> :
  *   S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown :
+ *   S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue :
  *   S extends ConstShape<infer Value> ? Value : unknown
  * )} InferLeafInternal
  */
@@ -61,8 +79,9 @@
  *   S extends FloatShape ? number :
  *   S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] :
  *   S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]> } :
- *   S extends TagShape<infer ValueShape, infer JSValue> ? InferLeaf<ValueShape> :
+ *   S extends TagShape<infer ValueShape> ? InferLeaf<ValueShape> :
  *   S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown :
+ *   S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue :
  *   S extends ConstShape<infer Value> ? Value : unknown
  * )} InferShallowInternal
  */
@@ -82,8 +101,9 @@
  *   S extends FloatShape ? number :
  *   S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] :
  *   S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferShallow<Properties[K]> } :
- *   S extends TagShape<infer ValueShape, infer JSValue> ? JSValue :
+ *   S extends TagShape<infer ValueShape> ? InferShallow<ValueShape> :
  *   S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown :
+ *   S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue :
  *   S extends ConstShape<infer T> ? T : unknown
  * )} InferValueInternal
  */
@@ -111,17 +131,25 @@ export function array<ItemShape>(items: ItemShape): ArrayShape<ItemShape>;
  */
 export function map<Properties extends Record<string, Shape>>(properties: Properties): MapShape<Properties>;
 /**
+ * The main purpose for transform is to be combined with tag.
+ * Fundamentally, tag only put "label" upon a tagged value.
+ * When combined with this transform, we can map from CBOR primitive value to desired Javascript value.
+ *
  * @template ValueShape
  * @template JSValue
+ * @param {ValueShape} value
+ * @param {(value: InferValue<ValueShape>) => JSValue} decode
+ * @param {(value: JSValue) => InferValue<ValueShape>} encode
+ * @returns {TransformShape<ValueShape, JSValue>}
+ */
+export function transform<ValueShape, JSValue>(value: ValueShape, decode: (value: InferValue<ValueShape>) => JSValue, encode: (value: JSValue) => InferValue<ValueShape>): TransformShape<ValueShape, JSValue>;
+/**
+ * @template ValueShape
  * @param {bigint} tag
  * @param {ValueShape} value
- * @param {{ encode: (value: JSValue) => unknown, decode: (value: InferValue<ValueShape>) => JSValue }} options
- * @returns {TagShape<ValueShape, JSValue>}
+ * @returns {TagShape<ValueShape>}
  */
-export function tag<ValueShape, JSValue>(tag: bigint, value: ValueShape, options: {
-    encode: (value: JSValue) => unknown;
-    decode: (value: InferValue<ValueShape>) => JSValue;
-}): TagShape<ValueShape, JSValue>;
+export function tag<ValueShape>(tag: bigint, value: ValueShape): TagShape<ValueShape>;
 /**
  * @template {Shape[]} Variants
  * @param {Variants} variants
@@ -146,10 +174,10 @@ export function typeCheck<S extends Shape>(shape: S, value: unknown): value is I
  */
 export function readTag(cbor: Uint8Array<ArrayBuffer>): bigint;
 /**
- * @param {TagShape<unknown, unknown>} shape
+ * @param {TagShape<unknown>} shape
  * @param {Uint8Array<ArrayBuffer>} cbor
  */
-export function tagCheck(shape: TagShape<unknown, unknown>, cbor: Uint8Array<ArrayBuffer>): boolean;
+export function tagCheck(shape: TagShape<unknown>, cbor: Uint8Array<ArrayBuffer>): boolean;
 export function createEncoder(): {
     encode: <S extends Shape>(shape: S, value: InferValue<S>) => Uint8Array<ArrayBuffer>;
 };
@@ -194,23 +222,27 @@ export type MapShape<Properties extends Record<string, unknown>> = {
     type: typeof SHAPE_MAP;
     properties: Properties;
 };
-export type TagShape<ValueShape, JSValue> = {
+export type TagShape<ValueShape> = {
     type: typeof SHAPE_TAG;
     tag: bigint;
     value: ValueShape;
-    encode: (value: JSValue) => unknown;
+};
+export type OneOfShape<Variants> = {
+    type: typeof SHAPE_ONEOF;
+    variants: Variants;
+};
+export type TransformShape<ValueShape, JSValue> = {
+    type: typeof SHAPE_TRANSFORM;
+    value: ValueShape;
+    encode: (value: JSValue) => InferValue<ValueShape>;
     decode: (value: InferValue<ValueShape>) => JSValue;
 };
-export type OneOfShape<Vairants> = {
-    type: typeof SHAPE_ONEOF;
-    variants: Vairants;
-};
-export type Shape = PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | OneOfShape<unknown[]> | ConstShape<unknown> | TagShape<any, any>;
+export type Shape = PrimitiveShape | ArrayShape<unknown> | MapShape<Record<string, unknown>> | OneOfShape<unknown[]> | ConstShape<unknown> | TagShape<unknown> | TransformShape<any, any>;
 export type InferLeaf<S> = S extends unknown ? InferLeafInternal<S> : never;
-export type InferLeafInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends TagShape<infer ValueShape, infer JSValue> ? InferLeaf<ValueShape> : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : S extends ConstShape<infer Value> ? Value : unknown);
-export type InferShallowInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends TagShape<infer ValueShape, infer JSValue> ? InferLeaf<ValueShape> : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : S extends ConstShape<infer Value> ? Value : unknown);
+export type InferLeafInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends TagShape<infer ValueShape> ? InferLeaf<ValueShape> : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferLeaf<Variants[number]> : unknown : S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue : S extends ConstShape<infer Value> ? Value : unknown);
+export type InferShallowInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferLeaf<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferLeaf<Properties[K]>; } : S extends TagShape<infer ValueShape> ? InferLeaf<ValueShape> : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue : S extends ConstShape<infer Value> ? Value : unknown);
 export type InferShallow<S> = S extends unknown ? InferShallowInternal<S> : never;
-export type InferValueInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferShallow<Properties[K]>; } : S extends TagShape<infer ValueShape, infer JSValue> ? JSValue : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : S extends ConstShape<infer T> ? T : unknown);
+export type InferValueInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] : S extends MapShape<infer Properties> ? { [K in keyof Properties]: InferShallow<Properties[K]>; } : S extends TagShape<infer ValueShape> ? InferShallow<ValueShape> : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue : S extends ConstShape<infer T> ? T : unknown);
 export type InferValue<S> = S extends unknown ? InferValueInternal<S> : never;
 declare const SHAPE_INTEGER: unique symbol;
 declare const SHAPE_BYTES: unique symbol;
@@ -224,4 +256,5 @@ declare const SHAPE_ARRAY: unique symbol;
 declare const SHAPE_MAP: unique symbol;
 declare const SHAPE_TAG: unique symbol;
 declare const SHAPE_ONEOF: unique symbol;
+declare const SHAPE_TRANSFORM: unique symbol;
 export {};
