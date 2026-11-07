@@ -28,6 +28,7 @@ function backendHandler(authCbor) {
    */
   if (tagCheck(AuthShape, authCbor)) {
     const auth = decode(AuthShape, authCbor);
+    auth.get('username'); // === admin
     // Do some auth...
     return encode(SessionShape, [
       ['userId', 1n],

@@ -82,6 +82,8 @@ export type InferShallow<S> = S extends unknown ? InferShallowInternal<S> : neve
 export type InferValueInternal<S> = (S extends IntegerShape ? bigint : S extends TextShape ? string : S extends BytesShape ? Uint8Array<ArrayBuffer> : S extends BooleanShape ? boolean : S extends NilShape ? null : S extends UndefShape ? undefined : S extends FloatShape ? number : S extends ArrayShape<infer ItemShape> ? InferShallow<ItemShape>[] : S extends DictShape<infer Records> ? Dict<Records> : S extends TagShape<infer ValueShape> ? InferShallow<ValueShape> : S extends OneOfShape<infer Variants> ? Variants extends readonly unknown[] ? InferShallow<Variants[number]> : unknown : S extends TransformShape<infer SourceShape, infer TargetValue> ? TargetValue : S extends ConstShape<infer T> ? T : unknown);
 export type InferValue<S> = S extends unknown ? InferValueInternal<S> : never;
 export type RecordValue<Record, K> = (Record extends [infer KS, infer VS] ? K extends InferLeaf<KS> ? InferLeaf<VS> : never : never);
+export type RecordKey<Record> = Record extends [infer KS, infer VS] ? InferLeaf<KS> : never;
+export type DictKeys<E extends readonly [unknown, unknown][]> = RecordKey<E[number]>;
 export type ValueForRecord<E extends readonly [unknown, unknown][], K> = ({
     [I in keyof E]: RecordValue<E[I], K>;
 }[number]);
@@ -220,6 +222,23 @@ export type EncodeValue<S> = S extends unknown ? EncodeValueInternal<S> : never;
  *     K extends InferLeaf<KS> ? InferLeaf<VS> : never :
  *     never
  * )} RecordValue
+ */
+/**
+ * Map a single [keyShape, valueShape] record pair to its key type.
+ * Declared on a naked type parameter so the conditional distributes over
+ * unions: when the record list's element type is a union
+ * (map() produces such lists from plain-object fields), each pair resolves
+ * independently and the union of all keys survives.
+ *
+ * @template Record
+ * @typedef {Record extends [infer KS, infer VS] ? InferLeaf<KS> : never} RecordKey
+ */
+/**
+ * Given a dict record list E, resolve the union of valid key types.
+ * Works for both tuple record lists (dict()) and pair-union lists (map()).
+ *
+ * @template {readonly [unknown, unknown][]} E
+ * @typedef {RecordKey<E[number]>} DictKeys
  */
 /**
  * Given a dict record list E, resolve the value type paired with the key type K.
@@ -380,18 +399,30 @@ export declare function map<Fields extends Record<string, Shape>>(fields: Fields
  */
 export declare class Dict<E extends readonly [unknown, unknown][]> extends Map<unknown, unknown> {
     /**
-     * @template const K
+     * @template {DictKeys<E>} const K
      * @param {K} key
-     * @returns {RecordValue<E[number], K> | undefined}
+     * @returns {RecordValue<E[number], K>}
      */
-    get<const K>(key: K): RecordValue<E[number], K> | undefined;
+    get<const K extends DictKeys<E>>(key: K): RecordValue<E[number], K>;
     /**
-     * @template const K
+     * @template {DictKeys<E>} const K
      * @param {K} key
      * @param {RecordValue<E[number], K>} value
      * @returns {this}
      */
-    set<const K>(key: K, value: RecordValue<E[number], K>): this;
+    set<const K extends DictKeys<E>>(key: K, value: RecordValue<E[number], K>): this;
+    /**
+     * @template {DictKeys<E>} const K
+     * @param {K} key
+     * @returns {boolean}
+     */
+    has<const K extends DictKeys<E>>(key: K): boolean;
+    /**
+     * @template {DictKeys<E>} const K
+     * @param {K} key
+     * @returns {boolean}
+     */
+    delete<const K extends DictKeys<E>>(key: K): boolean;
 }
 /**
  * The main purpose for transform is to be combined with tag.
