@@ -1,4 +1,7 @@
-import { array, boolean, bytes, createEncoder, decode, float, integer, map, nil, oneOf, text, typeCheck } from '../lib/cbor.js';
+import {
+  array, boolean, bytes, constant, encode, decode, dict,
+  float, integer, nil, oneOf, text, typeCheck,
+} from '../lib/cbor.js';
 
 const sqlParamShape = oneOf(
   nil(),
@@ -9,28 +12,26 @@ const sqlParamShape = oneOf(
   bytes(),
 );
 
-const sqlQueryShape = map({
-  sql: text(),
-  params: array(sqlParamShape),
-});
+const sqlQueryShape = dict(
+  [constant('sql'), text()],
+  [constant('params'), array(sqlParamShape)],
+);
 
-const encoder = createEncoder();
-
-const sqlQueryCbor = encoder.encode(sqlQueryShape, {
-  sql: 'SELECT * FROM users WHERE id = ?',
-  params: [123n],
-});
+const sqlQueryCbor = encode(sqlQueryShape, [
+  ['sql', 'SELECT * FROM users WHERE id = ?'],
+  ['params', [123n]],
+]);
 
 // Transfer sqlQueryCbor to another system
 
 const sqlQuery = decode(sqlQueryShape, sqlQueryCbor);
 
-console.log(sqlQuery.sql); // 'SELECT * FROM users WHERE id = ?'
+console.log(sqlQuery.get('sql')); // 'SELECT * FROM users WHERE id = ?'
 
 /** @type {unknown} */
 let unknownSqlQuery = undefined;
 
 if (typeCheck(sqlQueryShape, unknownSqlQuery)) {
-  // this should be typed as { sql: string, params: unknown[] }
+  // this should be typed as Dict<[[ConstShape<'sql'>, TextShape], [ConstShape<'params'>, ArrayShape<OneOfShape<...>>>]]>
   unknownSqlQuery;
 }

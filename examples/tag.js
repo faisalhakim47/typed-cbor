@@ -1,9 +1,10 @@
 // @ts-check
 
 import { equal } from 'node:assert/strict';
-import { transform, tag, integer, text, createEncoder, decode, map } from '../lib/cbor.js';
+import {
+  transform, tag, integer, text, encode, decode, dict, Dict, constant,
+} from '../lib/cbor.js';
 
-const cbor = createEncoder();
 
 // Tag 0 – RFC 3339 date/time string
 const DateTimeShape = tag(0n, transform(
@@ -12,7 +13,7 @@ const DateTimeShape = tag(0n, transform(
   value => value.toString(),
 ));
 
-const dateTimeCbor = cbor.encode(DateTimeShape, new Date());
+const dateTimeCbor = encode(DateTimeShape, new Date());
 const dateTime = decode(DateTimeShape, dateTimeCbor);
 equal(dateTime instanceof Date, true, 'shall be Date');
 
@@ -23,29 +24,29 @@ const TimestampShape = tag(1n, transform(
   value => BigInt(Math.floor(value.getTime() / 1000)),
 ));
 
-const timestampCbor = cbor.encode(TimestampShape, new Date());
+const timestampCbor = encode(TimestampShape, new Date());
 const timestamp = decode(TimestampShape, timestampCbor);
 equal(timestamp instanceof Date, true, 'shall be Date');
 
 // App level custom tags
 
-const SquareShape = tag(10001n, map({
-  height: integer(),
-  width: integer(),
-}));
-const squareCbor = cbor.encode(SquareShape, {
-  height: 1n,
-  width: 1n,
-});
+const SquareShape = tag(10001n, dict(
+  [constant('height'), integer()],
+  [constant('width'), integer()],
+));
+const squareCbor = encode(SquareShape, [
+  ['height', 1n],
+  ['width', 1n],
+]);
 const square = decode(SquareShape, squareCbor);
-square.height;
+square.get('height');
 
-const QubeShape = tag(10002n, map({
-  size: integer(),
-}));
-const qubeCbor = cbor.encode(QubeShape, { size: 2n });
+const QubeShape = tag(10002n, dict(
+  [constant('size'), integer()],
+));
+const qubeCbor = encode(QubeShape, [['size', 2n]]);
 const qube = decode(QubeShape, qubeCbor);
-qube.size;
+qube.get('size');
 
 class Coordinate {
   /**
@@ -61,16 +62,22 @@ class Coordinate {
 const CoordinateShape = tag(
   10003n,
   transform(
-    map({ x: integer(), y: integer() }),
+    dict(
+      [constant('x'), integer()],
+      [constant('y'), integer()],
+    ),
     function decode(obj) {
-      return new Coordinate(Number(obj.x), Number(obj.y));
+      return new Coordinate(Number(obj.get('x')), Number(obj.get('y')));
     },
     function encode(coordinate) {
-      return { x: BigInt(coordinate.x), y: BigInt(coordinate.y) };
+      return new Dict([
+        ['x', BigInt(coordinate.x)],
+        ['y', BigInt(coordinate.y)],
+      ]);
     },
   ),
 );
-const coordinateCbor = cbor.encode(CoordinateShape, new Coordinate(100, 200));
+const coordinateCbor = encode(CoordinateShape, new Coordinate(100, 200));
 const coordinate = decode(CoordinateShape, coordinateCbor);
 coordinate.x;
 coordinate.y;

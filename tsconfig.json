@@ -4,9 +4,12 @@
     "checkJs": true,
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "target": "es2025",
+    "target": "esnext",
+    "rootDir": "./lib",
     "declaration": true,
+    "declarationDir": "./types",
     "emitDeclarationOnly": true,
+    "noEmit": false,
     "types": ["node"],
     "lib": ["ESNext", "DOM"]
   },

@@ -18,21 +18,23 @@ This library provides:
 ## Quick Start
 
 ```javascript
-import { map, text, integer, createEncoder, decode } from 'typed-cbor';
+import { dict, constant, text, integer, encode, decode } from 'typed-cbor';
 
-const schema = map({
-  name: text(),
-  age: integer(),
-});
+const schema = dict(
+  [constant('name'), text()],
+  [constant('age'), integer()],
+);
 
-const encoder = createEncoder();
-
-// Encode
-const cbor = encoder.encode(schema, { name: 'Alice', age: 30n });
+// Encode (dicts accept plain [key, value] pair arrays, or Dict instances)
+const cbor = encode(schema, [
+  ['name', 'Alice'],
+  ['age', 30n],
+]);
 
 // Decode
 const decoded = decode(schema, cbor);
-// decoded = { name: 'Alice', age: 30n }
+// decoded.get('name') === 'Alice'
+// decoded.get('age') === 30n
 ```
 
 ## API
@@ -56,11 +58,27 @@ const decoded = decode(schema, cbor);
 const arrayOfIntegers = array(integer());
 arrayOfIntegers.type; // 'Array'
 
-// Maps - key-value pairs with string keys
-const userSchema = map({
-  name: text(),
-  age: integer(),
-});
+// Dicts - key-value maps with arbitrary keys.
+// record declares a paired `[key, value]` pattern.
+// collects these patterns into a shape. Key shapes must be disjoint.
+const userSchema = dict(
+  [constant('name'), text()],
+  [constant('age'), integer()],
+);
+
+// A dict decodes into a Dict (a Map subclass) with per-key typing:
+const user = decode(userSchema, cbor);
+user.get('name'); // string | undefined
+
+// Record-style shorthand for string-keyed dicts. Equivalent to the
+// dict() above, but takes a plain object of shapes:
+const userMapSchema = map({ name: text(), age: integer() });
+
+// Non-string keys are supported (dict() only — map() is string keys):
+const lookupSchema = dict(
+  [integer(), text()],
+  [text(), boolean()],
+);
 
 // OneOf - union types
 const sqlParam = oneOf(nil(), integer(), text(), float());
@@ -83,10 +101,17 @@ const status = oneOf(constant('active'), constant('inactive'));
 
 | Function | Description |
 |----------|-------------|
-| `createEncoder()` | Creates an encoder instance with internal buffer |
-| `encode(shape, value)` | Encodes a value using the provided schema |
+| `encode(shape, value)` | Encodes a value using the provided schema (shared singleton encoder) |
+| `createEncoder()` | Creates an isolated encoder instance with its own buffer (`{ encode }`) |
 | `decode(shape, cbor)` | Decodes CBOR bytes using the provided schema |
-| `typeCheck(shape, value)` | Validates a value against a schema |
+| `typeCheck(shape, value)` | Validates a value against a schema (dict shapes only accept `Dict` instances, not pair arrays) |
+
+## Migrating from V1
+
+- `map({ name: text(), age: integer() })` still exists as a string-keyed shorthand, but it now returns a dict shape that decodes to a `Dict`, not a plain object.
+- `encode` no longer accepts plain objects: pass `[['name', 'Alice'], ['age', 30n]]` or `new Dict([['name', 'Alice'], ['age', 30n]])`.
+- `decode` returns a `Dict`: read with `decoded.get('name')` instead of `decoded.name`.
+- `encode` is now a top-level singleton. Use `createEncoder()` only when you need an isolated buffer.
 
 ## Examples
 
@@ -94,7 +119,10 @@ const status = oneOf(constant('active'), constant('inactive'));
 
 ```javascript
 // examples/basic.js
-import { array, boolean, bytes, createEncoder, decode, float, integer, map, nil, oneOf, text, typeCheck } from 'typed-cbor';
+import {
+  array, boolean, bytes, constant, decode, dict,
+  float, integer, nil, oneOf, text, typeCheck,
+} from 'typed-cbor';
 
 const sqlParamShape = oneOf(
   nil(),
@@ -105,29 +133,25 @@ const sqlParamShape = oneOf(
   bytes(),
 );
 
-const sqlQueryShape = map({
-  sql: text(),
-  params: array(sqlParamShape),
-});
+const sqlQueryShape = dict(
+  [constant('sql'), text()],
+  [constant('params'), array(sqlParamShape)],
+);
 
-const encoder = createEncoder();
-
-const cbor = encoder.encode(sqlQueryShape, {
-  sql: 'SELECT * FROM users WHERE id = ?',
-  params: [123n],
-});
+const cbor = encode(sqlQueryShape, [
+  ['sql', 'SELECT * FROM users WHERE id = ?'],
+  ['params', [123n]],
+]);
 
 const decoded = decode(sqlQueryShape, cbor);
-console.log(decoded.sql); // 'SELECT * FROM users WHERE id = ?'
+console.log(decoded.get('sql')); // 'SELECT * FROM users WHERE id = ?'
 ```
 
 ### Tags and Transforms
 
 ```javascript
 // examples/tag.js
-import { transform, tag, integer, text, createEncoder, decode, map } from 'typed-cbor';
-
-const cbor = createEncoder();
+import { transform, tag, integer, text, constant, dict, Dict, decode } from 'typed-cbor';
 
 // Tag 0 – RFC 3339 date/time string
 const DateTimeShape = tag(0n, transform(
@@ -136,7 +160,7 @@ const DateTimeShape = tag(0n, transform(
   value => value.toString(),
 ));
 
-const dateTimeCbor = cbor.encode(DateTimeShape, new Date());
+const dateTimeCbor = encode(DateTimeShape, new Date());
 const dateTime = decode(DateTimeShape, dateTimeCbor);
 // dateTime instanceof Date === true
 
@@ -153,9 +177,15 @@ class Coordinate {
 }
 
 const CoordinateShape = tag(10003n, transform(
-  map({ x: integer(), y: integer() }),
-  obj => new Coordinate(Number(obj.x), Number(obj.y)),
-  coord => ({ x: BigInt(coord.x), y: BigInt(coord.y) }),
+  dict(
+    [constant('x'), integer()],
+    [constant('y'), integer()],
+  ),
+  obj => new Coordinate(Number(obj.get('x')), Number(obj.get('y'))),
+  coord => new Dict([
+    ['x', BigInt(coord.x)],
+    ['y', BigInt(coord.y)],
+  ]),
 ));
 ```
 
@@ -163,34 +193,32 @@ const CoordinateShape = tag(10003n, transform(
 
 ```javascript
 // examples/communication.js
-import { tag, map, integer, text, tagCheck, createEncoder, decode } from 'typed-cbor';
+import { tag, dict, constant, integer, text, tagCheck, decode } from 'typed-cbor';
 
-const AuthShape = tag(10001n, map({
-  username: text(),
-  password: text(),
-}));
+const AuthShape = tag(10001n, dict(
+  [constant('username'), text()],
+  [constant('password'), text()],
+));
 
-const SessionShape = tag(10002n, map({
-  userId: integer(),
-  token: text(),
-}));
-
-const cbor = createEncoder();
+const SessionShape = tag(10002n, dict(
+  [constant('userId'), integer()],
+  [constant('token'), text()],
+));
 
 // Frontend sends auth request
-const authRequest = cbor.encode(AuthShape, {
-  username: 'admin',
-  password: 'admin',
-});
+const authRequest = encode(AuthShape, [
+  ['username', 'admin'],
+  ['password', 'admin'],
+]);
 
 // Backend receives and routes by tag
 function backendHandler(authCbor) {
   if (tagCheck(AuthShape, authCbor)) {
     const auth = decode(AuthShape, authCbor);
-    return cbor.encode(SessionShape, {
-      userId: 1n,
-      token: 'somecomplextoken',
-    });
+    return encode(SessionShape, [
+      ['userId', 1n],
+      ['token', 'somecomplextoken'],
+    ]);
   }
   throw new Error('Unhandled case');
 }
@@ -201,24 +229,32 @@ function backendHandler(authCbor) {
 The library provides full TypeScript type inference:
 
 ```typescript
-import { map, integer, text, createEncoder, decode } from 'typed-cbor';
+import { dict, map, constant, integer, text, encode, decode } from 'typed-cbor';
 
-const UserSchema = map({
-  id: integer(),
-  name: text(),
-});
+const UserSchema = dict(
+  [constant('id'), integer()],
+  [constant('name'), text()],
+);
 
-// InferValue<UserSchema> = { id: bigint, name: string }
+// Record-style shorthand — equivalent to the dict() above:
+const UserMapSchema = map({ id: integer(), name: text() });
 
-const encoder = createEncoder();
-const cbor = encoder.encode(UserSchema, { id: 1n, name: 'Alice' });
+// InferValue<UserSchema> = Dict<[[ConstShape<'id'>, IntegerShape], [ConstShape<'name'>, TextShape]]>
+
+const cbor = encode(UserSchema, [['id', 1n], ['name', 'Alice']]);
 const user = decode(UserSchema, cbor);
-// user: { id: bigint, name: string }
+// user.get('id')   // bigint | undefined
+// user.get('name') // string | undefined
+// user.set('id', 'nope') // ✖ type error: string is not bigint
 ```
+
+Dict values accept either a `Dict` instance (as returned by `decode`) or a plain array of `[key, value]` pairs — the array form is checked against the schema's records at the call site (value types, key kinds, and literal key names).
+
+**Literal inference.** `constant()` and `Dict.get()/set()` use `const` type parameters, so `constant('id')` infers `ConstShape<'id'>` (not `ConstShape<string>`) with no pinning needed. `encode(UserSchema, [['id', 1n], ['name', 'Alice']])` type-checks while both `[['id', 'nope']]` (wrong value) and `[['idx', 1n]]` (wrong key name) fail statically; unknown key names are also caught at runtime by the encoder.
 
 ## Limitations
 
-- **Map keys** - Only string keys are supported
+- **Dict keys** - Keys must match one of the declared record patterns, and key shapes must be disjoint (enforced at `dict()` construction). Byte-string keys are supported but compare by content.
 - **Numbers** - NaN and Infinity are not supported
 - **Indefinite length** - Streaming indefinite-length items are not supported
 - **Tags** - Only basic tag support; users must implement custom handlers for CBOR tag registry values

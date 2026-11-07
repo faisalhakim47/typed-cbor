@@ -1,24 +1,22 @@
 // @ts-check
 
-import { tag, map, integer, text, tagCheck, createEncoder, decode } from '../lib/cbor.js';
+import { tag, dict, constant, integer, text, tagCheck, encode, decode } from '../lib/cbor.js';
 
-const AuthShape = tag(10001n, map({
-  username: text(),
-  password: text(),
-}))
+const AuthShape = tag(10001n, dict(
+  [constant('username'), text()],
+  [constant('password'), text()],
+));
 
-const SessionShape = tag(10002n, map({
-  userId: integer(),
-  token: text(),
-}));
-
-const cbor = createEncoder();
+const SessionShape = tag(10002n, dict(
+  [constant('userId'), integer()],
+  [constant('token'), text()],
+));
 
 function frontendSendAuth() {
-  return cbor.encode(AuthShape, {
-    username: 'admin',
-    password: 'admin',
-  });
+  return encode(AuthShape, [
+    ['username', 'admin'],
+    ['password', 'admin'],
+  ]);
 }
 
 /**
@@ -31,10 +29,10 @@ function backendHandler(authCbor) {
   if (tagCheck(AuthShape, authCbor)) {
     const auth = decode(AuthShape, authCbor);
     // Do some auth...
-    return cbor.encode(SessionShape, {
-      userId: 1n,
-      token: 'somecomplextoken',
-    });
+    return encode(SessionShape, [
+      ['userId', 1n],
+      ['token', 'somecomplextoken'],
+    ]);
   }
   else throw new Error('Unhandled case');
 }
